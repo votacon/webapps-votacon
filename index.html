@@ -4,6 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>webapps-votacon</title>
+<meta name="description" content="Coleção de pequenos webapps estáticos, cada um hospedado como um site próprio via GitHub Pages.">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f7f9">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0e1116">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧰</text></svg>">
+<meta property="og:type" content="website">
+<meta property="og:title" content="webapps-votacon">
+<meta property="og:description" content="Coleção de pequenos webapps estáticos, hospedados via GitHub Pages.">
+<meta property="og:url" content="https://votacon.github.io/webapps-votacon/">
+<meta property="og:image" content="https://votacon.github.io/webapps-votacon/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <style>
   :root {
     --bg: #f6f7f9;
@@ -68,6 +78,7 @@
     <header>
       <h1>webapps-votacon</h1>
       <p class="sub">Coleção de pequenos webapps. Cada um mora numa pasta e vira um site próprio.</p>
+      <p class="sub" id="count" style="margin-top:10px;font-size:.9rem;opacity:.75"></p>
     </header>
     <main>
       <div class="grid" id="grid"></div>
@@ -89,11 +100,13 @@
     } else {
       grid.innerHTML = APPS.map(a => `
         <a class="card" href="${a.path}">
-          <div class="emoji">${a.emoji || "📦"}</div>
+          <div class="emoji" aria-hidden="true">${a.emoji || "📦"}</div>
           <h2>${a.name}</h2>
           <p>${a.desc || ""}</p>
         </a>`).join("");
     }
+    document.getElementById("count").textContent =
+      APPS.length + (APPS.length === 1 ? " app" : " apps");
   </script>
 </body>
 </html>
