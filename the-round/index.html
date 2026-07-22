@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Round — 15-Minute Sprint</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Newsreader:ital,opsz,wght@0,18..72,400;1,18..72,400;1,18..72,500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#17131F;
+    --ink-deep:#0E0A14;
+    --brass:#F5C766;
+    --brass-deep:#DF9A3C;
+    --parchment:#ECE3D2;
+    --dim:#8A8098;
+    --dim-soft:#5A5268;
+    --release:#6FEBD2;
+    --release-deep:#39B7C7;
+    --hair:rgba(236,227,210,.10);
+
+    --accent:var(--brass);
+    --accent-deep:var(--brass-deep);
+    --frac:1;            /* fraction of the round remaining */
+    --glow:.55;          /* ambient glow intensity */
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--ink-deep);
+    color:var(--parchment);
+    font-family:"Archivo",system-ui,sans-serif;
+    min-height:100dvh;
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ambient stage + time-linked glow */
+  #stage{
+    position:fixed; inset:0;
+    background:
+      radial-gradient(140% 120% at 50% 8%, #221A2E 0%, var(--ink) 42%, var(--ink-deep) 100%);
+  }
+  #halo{
+    position:fixed; left:50%; top:44%;
+    width:min(150vw,1400px); aspect-ratio:1; transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:radial-gradient(circle,
+      color-mix(in oklab, var(--accent) 60%, transparent) 0%,
+      transparent 62%);
+    opacity:calc(.10 + var(--glow) * .34 * var(--frac));
+    filter:blur(10px);
+    pointer-events:none;
+    transition:opacity .6s ease, background .8s ease;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    #halo{animation:breathe 6.5s ease-in-out infinite}
+    @keyframes breathe{
+      0%,100%{transform:translate(-50%,-50%) scale(calc(.72 + var(--frac)*.28))}
+      50%    {transform:translate(-50%,-50%) scale(calc(.76 + var(--frac)*.30))}
+    }
+  }
+  #bloom{
+    position:fixed; left:50%; top:44%; transform:translate(-50%,-50%);
+    width:10px; aspect-ratio:1; border-radius:50%;
+    border:2px solid color-mix(in oklab, var(--release) 70%, transparent);
+    opacity:0; pointer-events:none;
+  }
+  @media (prefers-reduced-motion: no-preference){
+    #bloom.fire{animation:bloom 1.5s cubic-bezier(.16,.8,.3,1) forwards}
+    @keyframes bloom{
+      0%{opacity:.9; width:10px; border-width:3px}
+      100%{opacity:0; width:min(180vw,1700px); border-width:1px}
+    }
+  }
+
+  /* layout */
+  main{
+    position:relative; z-index:2;
+    width:min(94vw,900px);
+    padding:6vh 24px;
+    text-align:center;
+    display:flex; flex-direction:column; align-items:center; gap:0;
+  }
+
+  .eyebrow{
+    font-weight:600;
+    font-size:clamp(.72rem,1.6vw,.92rem);
+    letter-spacing:.42em;
+    text-transform:uppercase;
+    color:var(--accent);
+    padding-left:.42em;
+    transition:color .6s ease;
+    min-height:1.2em;
+  }
+  .eyebrow .plus{color:var(--parchment)}
+
+  .clock{
+    font-weight:900;
+    font-size:clamp(5.2rem,26vw,17rem);
+    line-height:.86;
+    letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;
+    font-feature-settings:"tnum" 1;
+    margin:.10em 0 .04em;
+    background:linear-gradient(176deg, var(--parchment) 4%, var(--accent) 40%, var(--accent-deep) 100%);
+    -webkit-background-clip:text; background-clip:text;
+    -webkit-text-fill-color:transparent; color:transparent;
+    text-shadow:0 0 60px color-mix(in oklab, var(--accent) 22%, transparent);
+    transition:background .7s ease;
+    user-select:none;
+  }
+
+  .contract{
+    font-family:"Newsreader",Georgia,serif;
+    font-style:italic;
+    font-size:clamp(1.05rem,2.7vw,1.5rem);
+    color:var(--parchment);
+    max-width:22ch;
+    line-height:1.34;
+    margin:.2em auto .1em;
+    text-wrap:balance;
+  }
+  .contract b{font-style:normal;font-weight:500;color:var(--accent)}
+
+  .controls{
+    display:flex; gap:14px; flex-wrap:wrap; justify-content:center;
+    margin-top:clamp(22px,4vh,40px);
+  }
+
+  button{
+    font-family:inherit; cursor:pointer; border:none;
+    letter-spacing:.02em;
+    transition:transform .12s ease, background .3s ease, color .3s ease, border-color .3s ease, opacity .3s ease;
+  }
+  button:active{transform:translateY(1px) scale(.985)}
+  button:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+
+  .btn-primary{
+    font-weight:800; font-size:clamp(1rem,2.2vw,1.18rem);
+    letter-spacing:.02em;
+    color:var(--ink-deep);
+    background:linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
+    padding:18px 40px; border-radius:100px;
+    box-shadow:0 12px 40px -12px color-mix(in oklab, var(--accent) 60%, transparent);
+  }
+  .btn-primary:hover{transform:translateY(-2px)}
+
+  .btn-ghost{
+    font-weight:600; font-size:clamp(.9rem,1.9vw,1rem);
+    color:var(--dim);
+    background:transparent;
+    padding:18px 26px; border-radius:100px;
+    border:1px solid var(--hair);
+  }
+  .btn-ghost:hover{color:var(--parchment); border-color:color-mix(in oklab,var(--parchment) 30%, transparent)}
+
+  /* dual choice at the bell */
+  .choice-row{
+    display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
+    margin-top:clamp(22px,4vh,40px);
+  }
+  .choice{
+    display:flex; flex-direction:column; align-items:flex-start; gap:5px;
+    text-align:left;
+    padding:20px 26px; border-radius:20px; min-width:min(78vw,260px);
+    border:1px solid var(--hair); background:rgba(255,255,255,.02);
+  }
+  .choice .lead{font-weight:800; font-size:1.18rem}
+  .choice .sub{font-family:"Newsreader",serif; font-style:italic; color:var(--dim); font-size:1rem; line-height:1.3}
+  .choice.walk .lead{color:var(--release)}
+  .choice.walk:hover{border-color:color-mix(in oklab,var(--release) 55%, transparent); background:color-mix(in oklab,var(--release) 8%, transparent)}
+  .choice.stay .lead{color:var(--accent)}
+  .choice.stay:hover{border-color:color-mix(in oklab,var(--accent) 55%, transparent); background:color-mix(in oklab,var(--accent) 8%, transparent)}
+
+  /* duration chips (idle only) */
+  .presets{display:flex; gap:10px; justify-content:center; margin-top:22px}
+  .chip{
+    font-weight:600; font-size:.82rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--dim); background:transparent;
+    border:1px solid var(--hair); border-radius:100px; padding:9px 18px;
+  }
+  .chip[aria-pressed="true"]{color:var(--ink-deep); background:var(--parchment); border-color:var(--parchment)}
+  .chip:hover{color:var(--parchment)}
+  .chip[aria-pressed="true"]:hover{color:var(--ink-deep)}
+
+  .footnote{
+    position:fixed; left:0; right:0; bottom:22px; z-index:2;
+    text-align:center; color:var(--dim-soft);
+    font-family:"Newsreader",serif; font-style:italic;
+    font-size:clamp(.82rem,1.8vw,.98rem);
+    padding:0 20px;
+    transition:opacity .4s ease;
+  }
+
+  .hide{display:none !important}
+  .fade{opacity:0; transform:translateY(6px)}
+  .clock, .eyebrow, .contract{transition:opacity .35s ease, transform .35s ease, background .7s ease, color .6s ease}
+
+  /* release theme */
+  body.release{--accent:var(--release); --accent-deep:var(--release-deep)}
+
+  @media (max-width:520px){
+    .choice{min-width:100%}
+    .footnote{position:static; margin-top:26px}
+    main{padding:5vh 20px 0}
+    body{overflow:auto}
+  }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="halo"></div>
+  <div id="bloom"></div>
+
+  <main>
+    <div class="eyebrow" id="eyebrow">Sprint · 15-minute round</div>
+    <div class="clock" id="clock" aria-live="polite">15:00</div>
+    <p class="contract" id="contract">At the bell, you may walk. <b>Zero guilt, full credit.</b></p>
+
+    <!-- IDLE -->
+    <div class="controls" id="ctrl-idle">
+      <button class="btn-primary" id="startBtn">Start the round</button>
+    </div>
+    <div class="presets" id="presets">
+      <button class="chip" data-min="5" aria-pressed="false">5 · Ignition</button>
+      <button class="chip" data-min="15" aria-pressed="true">15 · Sprint</button>
+    </div>
+
+    <!-- RUNNING / PAUSED -->
+    <div class="controls hide" id="ctrl-run">
+      <button class="btn-primary" id="pauseBtn">Pause</button>
+      <button class="btn-ghost" id="resetBtn">Reset</button>
+    </div>
+
+    <!-- BELL -->
+    <div class="choice-row hide" id="ctrl-bell">
+      <button class="choice walk" id="walkBtn">
+        <span class="lead">Walk away →</span>
+        <span class="sub">rep logged · you're free</span>
+      </button>
+      <button class="choice stay" id="stayBtn">
+        <span class="lead">Keep going</span>
+        <span class="sub">every minute now is volunteered</span>
+      </button>
+    </div>
+
+    <!-- OVERTIME -->
+    <div class="controls hide" id="ctrl-over">
+      <button class="btn-primary" id="doneBtn">I'm done — stop here</button>
+    </div>
+
+    <!-- DONE -->
+    <div class="controls hide" id="ctrl-done">
+      <button class="btn-primary" id="againBtn">Start another round</button>
+    </div>
+  </main>
+
+  <div class="footnote" id="footnote">Walking at the bell is the system working — not failing.</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var DEFAULT_MIN = 15;
+  var roundMs = DEFAULT_MIN*60*1000;
+
+  // state: idle | running | paused | bell | overtime | done
+  var state = "idle";
+  var remaining = roundMs;        // ms left in the round
+  var overtimeMs = 0;             // ms volunteered past the bell
+  var anchor = 0;                 // Date.now() at last resume
+  var rafId = null;
+  var lastShown = null;
+
+  var el = {
+    body: document.body,
+    eyebrow: document.getElementById("eyebrow"),
+    clock: document.getElementById("clock"),
+    contract: document.getElementById("contract"),
+    halo: document.getElementById("halo"),
+    bloom: document.getElementById("bloom"),
+    footnote: document.getElementById("footnote"),
+    presets: document.getElementById("presets"),
+    idle: document.getElementById("ctrl-idle"),
+    run: document.getElementById("ctrl-run"),
+    bell: document.getElementById("ctrl-bell"),
+    over: document.getElementById("ctrl-over"),
+    done: document.getElementById("ctrl-done"),
+    startBtn: document.getElementById("startBtn"),
+    pauseBtn: document.getElementById("pauseBtn"),
+    resetBtn: document.getElementById("resetBtn"),
+    walkBtn: document.getElementById("walkBtn"),
+    stayBtn: document.getElementById("stayBtn"),
+    doneBtn: document.getElementById("doneBtn"),
+    againBtn: document.getElementById("againBtn")
+  };
+
+  function fmt(ms){
+    if(ms < 0) ms = 0;
+    var t = Math.ceil(ms/1000);
+    var m = Math.floor(t/60), s = t%60;
+    return m + ":" + (s<10 ? "0"+s : s);
+  }
+
+  function show(node){ node.classList.remove("hide"); }
+  function hideAll(){
+    [el.idle, el.run, el.bell, el.over, el.done, el.presets].forEach(function(n){ n.classList.add("hide"); });
+  }
+
+  function setVars(){
+    var frac = state === "overtime" ? 0 : Math.max(0, Math.min(1, remaining/roundMs));
+    el.body.style.setProperty("--frac", frac.toFixed(4));
+  }
+
+  function render(){
+    var text;
+    if(state === "overtime"){ text = "+"+fmt(overtimeMs); }
+    else { text = fmt(remaining); }
+    if(text !== lastShown){ el.clock.textContent = text; lastShown = text; }
+    setVars();
+  }
+
+  function tick(){
+    var now = Date.now();
+    if(state === "running"){
+      remaining = remainingAtResume - (now - anchor);
+      if(remaining <= 0){ remaining = 0; ring(); }
+    } else if(state === "overtime"){
+      overtimeMs = (now - anchor) + overtimeBase;
+    }
+    render();
+    rafId = requestAnimationFrame(tick);
+  }
+
+  var remainingAtResume = roundMs;
+  var overtimeBase = 0;
+
+  function start(){
+    remainingAtResume = remaining;
+    anchor = Date.now();
+    state = "running";
+    hideAll(); show(el.run);
+    el.eyebrow.textContent = "In the round";
+    el.contract.classList.add("fade");
+    el.footnote.style.opacity = ".55";
+    ensureAudio();
+    loop();
+  }
+
+  function loop(){ cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); }
+
+  function pause(){
+    if(state !== "running") return;
+    remaining = remainingAtResume - (Date.now() - anchor);
+    if(remaining < 0) remaining = 0;
+    state = "paused";
+    cancelAnimationFrame(rafId);
+    el.eyebrow.textContent = "Paused";
+    el.pauseBtn.textContent = "Resume";
+    render();
+  }
+
+  function resume(){
+    if(state !== "paused") return;
+    remainingAtResume = remaining;
+    anchor = Date.now();
+    state = "running";
+    el.eyebrow.textContent = "In the round";
+    el.pauseBtn.textContent = "Pause";
+    loop();
+  }
+
+  function ring(){
+    cancelAnimationFrame(rafId);
+    state = "bell";
+    remaining = 0;
+    el.body.classList.add("release");
+    el.eyebrow.innerHTML = "The bell";
+    el.clock.textContent = "0:00"; lastShown = "0:00";
+    el.contract.classList.remove("fade","hide");
+    el.contract.innerHTML = "You showed up. <b>That is the rep.</b>";
+    hideAll(); show(el.bell);
+    el.footnote.style.opacity = ".55";
+    setVars();
+    fireBloom();
+    playBell();
+  }
+
+  function walk(){
+    state = "done";
+    cancelAnimationFrame(rafId);
+    el.eyebrow.textContent = "Rep logged";
+    el.clock.textContent = "✓"; lastShown="✓";
+    el.contract.classList.remove("fade","hide");
+    el.contract.innerHTML = "That counts. The tank was empty and you still logged a rep. <b>Come back tomorrow.</b>";
+    hideAll(); show(el.done);
+  }
+
+  function stay(){
+    state = "overtime";
+    overtimeBase = 0; overtimeMs = 0;
+    anchor = Date.now();
+    el.eyebrow.innerHTML = "Volunteered";
+    el.contract.classList.add("fade");
+    hideAll(); show(el.over);
+    loop();
+  }
+
+  function doneOvertime(){
+    state = "done";
+    cancelAnimationFrame(rafId);
+    el.eyebrow.textContent = "Round complete";
+    var mins = Math.floor(overtimeMs/60000), secs = Math.floor((overtimeMs%60000)/1000);
+    var vol = mins>0 ? (mins+" min") : (secs+" sec");
+    el.clock.textContent = "✓"; lastShown="✓";
+    el.contract.classList.remove("fade","hide");
+    el.contract.innerHTML = "The round bought you " + vol + " you volunteered. <b>All of it was a free choice.</b>";
+    hideAll(); show(el.done);
+  }
+
+  function reset(full){
+    cancelAnimationFrame(rafId);
+    state = "idle";
+    el.body.classList.remove("release");
+    remaining = roundMs; overtimeMs = 0; overtimeBase = 0; lastShown = null;
+    el.eyebrow.textContent = (roundMs/60000) + (roundMs/60000===5 ? "-minute ignition" : "-minute round");
+    el.eyebrow.textContent = "Sprint · " + (roundMs/60000) + "-minute round";
+    if(roundMs/60000 === 5) el.eyebrow.textContent = "Ignition · 5-minute round";
+    el.pauseBtn.textContent = "Pause";
+    el.contract.classList.remove("fade","hide");
+    el.contract.innerHTML = "At the bell, you may walk. <b>Zero guilt, full credit.</b>";
+    el.footnote.style.opacity = ".55";
+    hideAll(); show(el.idle); show(el.presets);
+    render();
+  }
+
+  /* ---- bloom ---- */
+  function fireBloom(){
+    el.bloom.classList.remove("fire");
+    void el.bloom.offsetWidth;
+    el.bloom.classList.add("fire");
+  }
+
+  /* ---- audio: a warm struck bell ---- */
+  var audioCtx = null;
+  function ensureAudio(){
+    if(audioCtx) { if(audioCtx.state==="suspended") audioCtx.resume(); return; }
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+    }catch(e){ audioCtx = null; }
+  }
+  function playBell(){
+    if(!audioCtx) return;
+    var now = audioCtx.currentTime;
+    var master = audioCtx.createGain();
+    master.gain.setValueAtTime(0.0001, now);
+    master.gain.exponentialRampToValueAtTime(0.5, now+0.008);
+    master.gain.exponentialRampToValueAtTime(0.0001, now+3.6);
+    master.connect(audioCtx.destination);
+    var partials = [[587.33,1.0],[1174.66,0.55],[1760.0,0.28],[2637.0,0.12]];
+    partials.forEach(function(p){
+      var o = audioCtx.createOscillator();
+      o.type = "sine"; o.frequency.value = p[0];
+      var g = audioCtx.createGain(); g.gain.value = p[1];
+      o.connect(g); g.connect(master);
+      o.start(now); o.stop(now+3.7);
+    });
+  }
+
+  /* ---- wiring ---- */
+  el.startBtn.addEventListener("click", start);
+  el.pauseBtn.addEventListener("click", function(){ state==="running" ? pause() : resume(); });
+  el.resetBtn.addEventListener("click", function(){ reset(true); });
+  el.walkBtn.addEventListener("click", walk);
+  el.stayBtn.addEventListener("click", stay);
+  el.doneBtn.addEventListener("click", doneOvertime);
+  el.againBtn.addEventListener("click", function(){ reset(true); });
+
+  Array.prototype.forEach.call(el.presets.querySelectorAll(".chip"), function(chip){
+    chip.addEventListener("click", function(){
+      Array.prototype.forEach.call(el.presets.querySelectorAll(".chip"), function(c){ c.setAttribute("aria-pressed","false"); });
+      chip.setAttribute("aria-pressed","true");
+      roundMs = parseInt(chip.getAttribute("data-min"),10)*60*1000;
+      reset(true);
+    });
+  });
+
+  document.addEventListener("keydown", function(e){
+    if(e.code === "Space"){
+      e.preventDefault();
+      if(state==="idle") start();
+      else if(state==="running") pause();
+      else if(state==="paused") resume();
+    } else if(e.key==="r" || e.key==="R"){
+      if(state!=="idle") reset(true);
+    }
+  });
+
+  reset(true);
+})();
+</script>
+</body>
+</html>
