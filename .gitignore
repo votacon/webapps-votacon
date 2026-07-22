@@ -1,0 +1,10 @@
+# macOS
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
+
+# Logs e dependências (caso algum app use build local no futuro)
+*.log
+node_modules/
