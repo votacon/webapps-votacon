@@ -198,6 +198,27 @@
     transition:opacity .4s ease;
   }
 
+  /* settings (fullscreen + glow toggles) */
+  .settings{
+    position:fixed; top:16px; right:16px; z-index:6;
+    display:flex; gap:8px;
+  }
+  .iconbtn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:42px; height:42px; border-radius:50%;
+    color:var(--dim); background:rgba(255,255,255,.02);
+    border:1px solid var(--hair);
+    transition:color .25s ease, border-color .25s ease, background .25s ease, transform .12s ease;
+  }
+  .iconbtn:hover{ color:var(--parchment); border-color:color-mix(in oklab,var(--parchment) 26%, transparent); transform:translateY(-1px); }
+  .iconbtn:active{ transform:translateY(0) scale(.96); }
+  .iconbtn:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+  .iconbtn svg{ width:20px; height:20px; display:block; }
+
+  /* glow-off: flatten the numeral glow + ambient halo */
+  body.no-glow .clock{ text-shadow:none; }
+  body.no-glow #halo{ opacity:0 !important; }
+
   .hide{display:none !important}
   .fade{opacity:0; transform:translateY(6px)}
   .clock, .eyebrow, .contract{transition:opacity .35s ease, transform .35s ease, background .7s ease, color .6s ease}
@@ -217,6 +238,11 @@
   <div id="stage"></div>
   <div id="halo"></div>
   <div id="bloom"></div>
+
+  <div class="settings" id="settings">
+    <button class="iconbtn" id="fsBtn" type="button" aria-pressed="false" aria-label="Alternar tela cheia" title="Tela cheia"></button>
+    <button class="iconbtn" id="glowBtn" type="button" aria-pressed="true" aria-label="Alternar brilho dos números" title="Brilho dos números"></button>
+  </div>
 
   <main>
     <div class="eyebrow" id="eyebrow">Sprint · 15-minute round</div>
@@ -298,7 +324,10 @@
     walkBtn: document.getElementById("walkBtn"),
     stayBtn: document.getElementById("stayBtn"),
     doneBtn: document.getElementById("doneBtn"),
-    againBtn: document.getElementById("againBtn")
+    againBtn: document.getElementById("againBtn"),
+    fsBtn: document.getElementById("fsBtn"),
+    glowBtn: document.getElementById("glowBtn"),
+    settings: document.getElementById("settings")
   };
 
   function fmt(ms){
@@ -474,6 +503,63 @@
     });
   }
 
+  /* ---- fullscreen + glow, persisted in localStorage ---- */
+  var ICON = {
+    fsEnter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
+    fsExit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>',
+    glowOn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
+    glowOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><path d="M3 3l18 18"/></svg>'
+  };
+
+  var LS = { glow: "theround:glow", fs: "theround:fullscreen" };
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+
+  function setGlow(on, save){
+    el.body.classList.toggle("no-glow", !on);
+    el.glowBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    el.glowBtn.innerHTML = on ? ICON.glowOn : ICON.glowOff;
+    el.glowBtn.title = on ? "Brilho dos números: ligado" : "Brilho dos números: desligado";
+    if(save) lsSet(LS.glow, on ? "on" : "off");
+  }
+  function toggleGlow(){ setGlow(el.body.classList.contains("no-glow"), true); }
+
+  function fsOn(){ return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+  function reqFs(){
+    var node = document.documentElement, fn = node.requestFullscreen || node.webkitRequestFullscreen;
+    if(fn){ try{ var p = fn.call(node); if(p && p.catch) p.catch(function(){}); }catch(e){} }
+  }
+  function exitFs(){
+    var fn = document.exitFullscreen || document.webkitExitFullscreen;
+    if(fn){ try{ var p = fn.call(document); if(p && p.catch) p.catch(function(){}); }catch(e){} }
+  }
+  function toggleFs(){ fsOn() ? exitFs() : reqFs(); }
+  function syncFsBtn(){
+    var on = fsOn();
+    el.fsBtn.setAttribute("aria-pressed", on ? "true" : "false");
+    el.fsBtn.innerHTML = on ? ICON.fsExit : ICON.fsEnter;
+    el.fsBtn.title = on ? "Sair da tela cheia" : "Tela cheia";
+  }
+  function onFsChange(){ syncFsBtn(); lsSet(LS.fs, fsOn() ? "on" : "off"); }
+
+  function initPrefs(){
+    setGlow(lsGet(LS.glow) !== "off", false);   // padrão: brilho ligado
+    syncFsBtn();
+    // Navegadores exigem um gesto do usuário para entrar em tela cheia; não dá
+    // para reentrar sozinho no load. Se a preferência estava ligada, reaplica
+    // na primeira interação do usuário com a página.
+    if(lsGet(LS.fs) === "on"){
+      var reenter = function(ev){
+        if(ev && ev.target && ev.target.closest && ev.target.closest("#settings")) return;
+        document.removeEventListener("pointerdown", reenter, true);
+        document.removeEventListener("keydown", reenter, true);
+        if(!fsOn()) reqFs();
+      };
+      document.addEventListener("pointerdown", reenter, true);
+      document.addEventListener("keydown", reenter, true);
+    }
+  }
+
   /* ---- wiring ---- */
   el.startBtn.addEventListener("click", start);
   el.pauseBtn.addEventListener("click", function(){ state==="running" ? pause() : resume(); });
@@ -482,6 +568,10 @@
   el.stayBtn.addEventListener("click", stay);
   el.doneBtn.addEventListener("click", doneOvertime);
   el.againBtn.addEventListener("click", function(){ reset(true); });
+  el.fsBtn.addEventListener("click", toggleFs);
+  el.glowBtn.addEventListener("click", toggleGlow);
+  document.addEventListener("fullscreenchange", onFsChange);
+  document.addEventListener("webkitfullscreenchange", onFsChange);
 
   Array.prototype.forEach.call(el.presets.querySelectorAll(".chip"), function(chip){
     chip.addEventListener("click", function(){
@@ -500,10 +590,15 @@
       else if(state==="paused") resume();
     } else if(e.key==="r" || e.key==="R"){
       if(state!=="idle") reset(true);
+    } else if(e.key==="f" || e.key==="F"){
+      toggleFs();
+    } else if(e.key==="g" || e.key==="G"){
+      toggleGlow();
     }
   });
 
   reset(true);
+  initPrefs();
 })();
 </script>
 </body>
