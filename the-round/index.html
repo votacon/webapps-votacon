@@ -4,6 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Round — 15-Minute Sprint</title>
+<meta name="description" content="A 15-minute focus sprint. Show up, ring the bell — walking away at the bell is the rep, not a failure.">
+<meta name="theme-color" content="#0E0A14">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⏱️</text></svg>">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta property="og:type" content="website">
+<meta property="og:title" content="The Round — 15-Minute Sprint">
+<meta property="og:description" content="Show up, ring the bell. Walking away at the bell is the rep, not a failure.">
+<meta property="og:url" content="https://votacon.github.io/webapps-votacon/the-round/">
+<meta property="og:image" content="https://votacon.github.io/webapps-votacon/the-round/og.png">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;800;900&family=Newsreader:ital,opsz,wght@0,18..72,400;1,18..72,400;1,18..72,500&display=swap" rel="stylesheet">
@@ -219,6 +230,10 @@
   body.no-glow .clock{ text-shadow:none; }
   body.no-glow #halo{ opacity:0 !important; }
 
+  .sr-only{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;
+  }
   .hide{display:none !important}
   .fade{opacity:0; transform:translateY(6px)}
   .clock, .eyebrow, .contract{transition:opacity .35s ease, transform .35s ease, background .7s ease, color .6s ease}
@@ -240,14 +255,15 @@
   <div id="bloom"></div>
 
   <div class="settings" id="settings">
-    <button class="iconbtn" id="fsBtn" type="button" aria-pressed="false" aria-label="Alternar tela cheia" title="Tela cheia"></button>
-    <button class="iconbtn" id="glowBtn" type="button" aria-pressed="true" aria-label="Alternar brilho dos números" title="Brilho dos números"></button>
+    <button class="iconbtn" id="fsBtn" type="button" aria-pressed="false" aria-label="Toggle fullscreen" title="Fullscreen"></button>
+    <button class="iconbtn" id="glowBtn" type="button" aria-pressed="true" aria-label="Toggle number glow" title="Number glow"></button>
   </div>
 
   <main>
     <div class="eyebrow" id="eyebrow">Sprint · 15-minute round</div>
-    <div class="clock" id="clock" aria-live="polite">15:00</div>
+    <div class="clock" id="clock" aria-live="off">15:00</div>
     <p class="contract" id="contract">At the bell, you may walk. <b>Zero guilt, full credit.</b></p>
+    <p id="sr-status" class="sr-only" aria-live="polite" aria-atomic="true"></p>
 
     <!-- IDLE -->
     <div class="controls" id="ctrl-idle">
@@ -302,7 +318,12 @@
   var overtimeMs = 0;             // ms volunteered past the bell
   var anchor = 0;                 // Date.now() at last resume
   var rafId = null;
+  var bellTimer = null;           // setTimeout — fires the bell even in a background tab (rAF is paused there)
+  var wakeLock = null;            // Screen Wake Lock sentinel
   var lastShown = null;
+  var lastTitle = null;
+  var ready = false;              // gate focus/side-effects until after the first render
+  var BASE_TITLE = "The Round — 15-Minute Sprint";
 
   var el = {
     body: document.body,
@@ -327,7 +348,8 @@
     againBtn: document.getElementById("againBtn"),
     fsBtn: document.getElementById("fsBtn"),
     glowBtn: document.getElementById("glowBtn"),
-    settings: document.getElementById("settings")
+    settings: document.getElementById("settings"),
+    srStatus: document.getElementById("sr-status")
   };
 
   function fmt(ms){
@@ -353,18 +375,56 @@
     else { text = fmt(remaining); }
     if(text !== lastShown){ el.clock.textContent = text; lastShown = text; }
     setVars();
+    if(state === "running"){ setTitle(fmt(remaining) + " · The Round"); }
+    else if(state === "overtime"){ setTitle("+" + fmt(overtimeMs) + " · The Round"); }
   }
+
+  function setTitle(t){ if(t !== lastTitle){ document.title = t; lastTitle = t; } }
+  function announce(msg){ if(el.srStatus){ el.srStatus.textContent = msg; } }
+  function focusPrimary(node){ if(ready && node){ try{ node.focus(); }catch(e){} } }
 
   function tick(){
     var now = Date.now();
     if(state === "running"){
       remaining = remainingAtResume - (now - anchor);
-      if(remaining <= 0){ remaining = 0; ring(); }
+      if(remaining <= 0){ remaining = 0; ring(); return; }   // safety net; no reschedule → no zombie loop
     } else if(state === "overtime"){
       overtimeMs = (now - anchor) + overtimeBase;
+    } else {
+      return;   // not running/overtime → stop the rAF loop
     }
     render();
     rafId = requestAnimationFrame(tick);
+  }
+
+  /* ---- the bell trigger: setTimeout survives background tabs; rAF does not ---- */
+  function scheduleBell(){
+    clearTimeout(bellTimer);
+    bellTimer = setTimeout(function(){ if(state === "running"){ remaining = 0; ring(); } }, Math.max(0, remaining));
+  }
+  function clearBell(){ clearTimeout(bellTimer); bellTimer = null; }
+
+  /* ---- screen wake lock: keep the phone awake during a round ---- */
+  function acquireWake(){
+    try{
+      if("wakeLock" in navigator && document.visibilityState === "visible"){
+        navigator.wakeLock.request("screen").then(function(w){ wakeLock = w; }).catch(function(){ wakeLock = null; });
+      }
+    }catch(e){ wakeLock = null; }
+  }
+  function releaseWake(){ try{ if(wakeLock){ wakeLock.release(); } }catch(e){} wakeLock = null; }
+
+  /* ---- notifications: alert when the tab is in the background ---- */
+  function maybeAskNotify(){
+    try{ if("Notification" in window && Notification.permission === "default"){ Notification.requestPermission(); } }catch(e){}
+  }
+  function notifyBell(){
+    try{
+      if("Notification" in window && Notification.permission === "granted" && document.hidden){
+        var n = new Notification("The bell — The Round", { body: "Walk away, or keep going.", tag: "the-round-bell" });
+        n.onclick = function(){ try{ window.focus(); }catch(e){} n.close(); };
+      }
+    }catch(e){}
   }
 
   var remainingAtResume = roundMs;
@@ -379,7 +439,12 @@
     el.contract.classList.add("fade");
     el.footnote.style.opacity = ".55";
     ensureAudio();
+    maybeAskNotify();
+    acquireWake();
+    scheduleBell();
     loop();
+    announce("Round started.");
+    focusPrimary(el.pauseBtn);
   }
 
   function loop(){ cancelAnimationFrame(rafId); rafId = requestAnimationFrame(tick); }
@@ -390,9 +455,13 @@
     if(remaining < 0) remaining = 0;
     state = "paused";
     cancelAnimationFrame(rafId);
+    clearBell();
+    releaseWake();
     el.eyebrow.textContent = "Paused";
     el.pauseBtn.textContent = "Resume";
+    setTitle("Paused · The Round");
     render();
+    announce("Paused.");
   }
 
   function resume(){
@@ -402,11 +471,18 @@
     state = "running";
     el.eyebrow.textContent = "In the round";
     el.pauseBtn.textContent = "Pause";
+    ensureAudio();
+    acquireWake();
+    scheduleBell();
     loop();
+    announce("Resumed.");
   }
 
   function ring(){
+    if(state !== "running") return;   // idempotent: fire once, only from a running round
     cancelAnimationFrame(rafId);
+    clearBell();
+    releaseWake();
     state = "bell";
     remaining = 0;
     el.body.classList.add("release");
@@ -417,18 +493,28 @@
     hideAll(); show(el.bell);
     el.footnote.style.opacity = ".55";
     setVars();
+    setTitle("🔔 The bell · The Round");
     fireBloom();
     playBell();
+    try{ if(navigator.vibrate){ navigator.vibrate([120,60,120,60,240]); } }catch(e){}
+    notifyBell();
+    announce("The bell. Walk away, or keep going.");
+    focusPrimary(el.walkBtn);
   }
 
   function walk(){
     state = "done";
     cancelAnimationFrame(rafId);
+    clearBell();
+    releaseWake();
     el.eyebrow.textContent = "Rep logged";
     el.clock.textContent = "✓"; lastShown="✓";
     el.contract.classList.remove("fade","hide");
     el.contract.innerHTML = "That counts. The tank was empty and you still logged a rep. <b>Come back tomorrow.</b>";
     hideAll(); show(el.done);
+    setTitle(BASE_TITLE);
+    announce("Rep logged. You're free.");
+    focusPrimary(el.againBtn);
   }
 
   function stay(){
@@ -438,12 +524,16 @@
     el.eyebrow.innerHTML = "Volunteered";
     el.contract.classList.add("fade");
     hideAll(); show(el.over);
+    acquireWake();
     loop();
+    announce("Volunteering extra time.");
+    focusPrimary(el.doneBtn);
   }
 
   function doneOvertime(){
     state = "done";
     cancelAnimationFrame(rafId);
+    releaseWake();
     el.eyebrow.textContent = "Round complete";
     var mins = Math.floor(overtimeMs/60000), secs = Math.floor((overtimeMs%60000)/1000);
     var vol = mins>0 ? (mins+" min") : (secs+" sec");
@@ -451,22 +541,27 @@
     el.contract.classList.remove("fade","hide");
     el.contract.innerHTML = "The round bought you " + vol + " you volunteered. <b>All of it was a free choice.</b>";
     hideAll(); show(el.done);
+    setTitle(BASE_TITLE);
+    announce("Round complete. You volunteered " + vol + ".");
+    focusPrimary(el.againBtn);
   }
 
-  function reset(full){
+  function reset(){
     cancelAnimationFrame(rafId);
+    clearBell();
+    releaseWake();
     state = "idle";
     el.body.classList.remove("release");
     remaining = roundMs; overtimeMs = 0; overtimeBase = 0; lastShown = null;
-    el.eyebrow.textContent = (roundMs/60000) + (roundMs/60000===5 ? "-minute ignition" : "-minute round");
-    el.eyebrow.textContent = "Sprint · " + (roundMs/60000) + "-minute round";
-    if(roundMs/60000 === 5) el.eyebrow.textContent = "Ignition · 5-minute round";
+    el.eyebrow.textContent = (roundMs/60000 === 5) ? "Ignition · 5-minute round" : "Sprint · " + (roundMs/60000) + "-minute round";
     el.pauseBtn.textContent = "Pause";
     el.contract.classList.remove("fade","hide");
     el.contract.innerHTML = "At the bell, you may walk. <b>Zero guilt, full credit.</b>";
     el.footnote.style.opacity = ".55";
     hideAll(); show(el.idle); show(el.presets);
+    setTitle(BASE_TITLE);
     render();
+    focusPrimary(el.startBtn);
   }
 
   /* ---- bloom ---- */
@@ -486,7 +581,9 @@
     }catch(e){ audioCtx = null; }
   }
   function playBell(){
+    ensureAudio();
     if(!audioCtx) return;
+    if(audioCtx.state === "suspended"){ audioCtx.resume(); }   // the round may have run 15 min in the background
     var now = audioCtx.currentTime;
     var master = audioCtx.createGain();
     master.gain.setValueAtTime(0.0001, now);
@@ -505,10 +602,10 @@
 
   /* ---- fullscreen + glow, persisted in localStorage ---- */
   var ICON = {
-    fsEnter: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
-    fsExit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>',
-    glowOn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
-    glowOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><path d="M3 3l18 18"/></svg>'
+    fsEnter: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/></svg>',
+    fsExit: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/><path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/></svg>',
+    glowOn: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
+    glowOff: '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M2 12h2M20 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/><path d="M3 3l18 18"/></svg>'
   };
 
   var LS = { glow: "theround:glow", fs: "theround:fullscreen" };
@@ -519,7 +616,7 @@
     el.body.classList.toggle("no-glow", !on);
     el.glowBtn.setAttribute("aria-pressed", on ? "true" : "false");
     el.glowBtn.innerHTML = on ? ICON.glowOn : ICON.glowOff;
-    el.glowBtn.title = on ? "Brilho dos números: ligado" : "Brilho dos números: desligado";
+    el.glowBtn.title = on ? "Number glow: on" : "Number glow: off";
     if(save) lsSet(LS.glow, on ? "on" : "off");
   }
   function toggleGlow(){ setGlow(el.body.classList.contains("no-glow"), true); }
@@ -538,7 +635,7 @@
     var on = fsOn();
     el.fsBtn.setAttribute("aria-pressed", on ? "true" : "false");
     el.fsBtn.innerHTML = on ? ICON.fsExit : ICON.fsEnter;
-    el.fsBtn.title = on ? "Sair da tela cheia" : "Tela cheia";
+    el.fsBtn.title = on ? "Exit fullscreen" : "Fullscreen";
   }
   function onFsChange(){ syncFsBtn(); lsSet(LS.fs, fsOn() ? "on" : "off"); }
 
@@ -563,33 +660,49 @@
   /* ---- wiring ---- */
   el.startBtn.addEventListener("click", start);
   el.pauseBtn.addEventListener("click", function(){ state==="running" ? pause() : resume(); });
-  el.resetBtn.addEventListener("click", function(){ reset(true); });
+  el.resetBtn.addEventListener("click", function(){ reset(); });
   el.walkBtn.addEventListener("click", walk);
   el.stayBtn.addEventListener("click", stay);
   el.doneBtn.addEventListener("click", doneOvertime);
-  el.againBtn.addEventListener("click", function(){ reset(true); });
+  el.againBtn.addEventListener("click", function(){ reset(); });
   el.fsBtn.addEventListener("click", toggleFs);
   el.glowBtn.addEventListener("click", toggleGlow);
   document.addEventListener("fullscreenchange", onFsChange);
   document.addEventListener("webkitfullscreenchange", onFsChange);
+
+  // Back to a visible tab: rAF was paused while hidden. Recompute, catch a bell
+  // that should already have rung, and re-acquire the wake lock (it auto-releases when hidden).
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState !== "visible") return;
+    if(state === "running"){
+      remaining = remainingAtResume - (Date.now() - anchor);
+      if(remaining <= 0){ remaining = 0; ring(); }
+      else { acquireWake(); loop(); render(); }
+    } else if(state === "overtime"){
+      acquireWake(); loop();
+    }
+  });
 
   Array.prototype.forEach.call(el.presets.querySelectorAll(".chip"), function(chip){
     chip.addEventListener("click", function(){
       Array.prototype.forEach.call(el.presets.querySelectorAll(".chip"), function(c){ c.setAttribute("aria-pressed","false"); });
       chip.setAttribute("aria-pressed","true");
       roundMs = parseInt(chip.getAttribute("data-min"),10)*60*1000;
-      reset(true);
+      reset();
     });
   });
 
   document.addEventListener("keydown", function(e){
+    if(e.metaKey || e.ctrlKey || e.altKey) return;   // never hijack browser shortcuts (Ctrl+F, Ctrl+G, Ctrl+R…)
     if(e.code === "Space"){
+      var ae = document.activeElement;
+      if(ae && ae.tagName === "BUTTON") return;       // let Space activate the focused button
       e.preventDefault();
       if(state==="idle") start();
       else if(state==="running") pause();
       else if(state==="paused") resume();
     } else if(e.key==="r" || e.key==="R"){
-      if(state!=="idle") reset(true);
+      if(state!=="idle") reset();
     } else if(e.key==="f" || e.key==="F"){
       toggleFs();
     } else if(e.key==="g" || e.key==="G"){
@@ -597,8 +710,13 @@
     }
   });
 
-  reset(true);
+  reset();
   initPrefs();
+  ready = true;
+
+  if("serviceWorker" in navigator){
+    window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+  }
 })();
 </script>
 </body>

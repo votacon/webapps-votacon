@@ -1,0 +1,16 @@
+{
+  "name": "The Round — 15-Minute Sprint",
+  "short_name": "The Round",
+  "description": "A 15-minute focus sprint. Show up, ring the bell — walking away at the bell is the rep, not a failure.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0E0A14",
+  "theme_color": "#0E0A14",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
